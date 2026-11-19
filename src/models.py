@@ -112,6 +112,7 @@ class TextTransformerEncoder(nn.Module):
     ) -> None:
         super().__init__()
         self.d_model = d_model
+        self.max_seq_len = max_seq_len
         self.pad_token_id = pad_token_id
         self.embedding = nn.Embedding(vocab_size, d_model, padding_idx=pad_token_id)
         self.pos_encoding = SinusoidalPositionalEncoding(d_model=d_model, max_len=max_seq_len)
@@ -135,7 +136,13 @@ class TextTransformerEncoder(nn.Module):
     def forward(self, input_ids: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         if input_ids.ndim != 2:
             raise ValueError(f"Expected input_ids shape (B, L), got {tuple(input_ids.shape)}")
+        if input_ids.shape[1] > self.max_seq_len:
+            raise ValueError(
+                f"Input sequence length {input_ids.shape[1]} exceeds max_seq_len {self.max_seq_len}"
+            )
         pad_mask = input_ids == self.pad_token_id
+        if pad_mask.all(dim=1).any():
+            raise ValueError("Each sequence must contain at least one non-padding token")
         x = self.embedding(input_ids) * math.sqrt(self.d_model)
         x = self.pos_encoding(x)
         x = self.dropout(self.norm_in(x))

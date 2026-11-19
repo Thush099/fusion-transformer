@@ -31,6 +31,18 @@ class Config:
             raise ValueError(f"num_features must be >= 1, got {self.num_features}")
         if self.num_classes < 2:
             raise ValueError(f"num_classes must be >= 2, got {self.num_classes}")
+        if self.n_heads < 1:
+            raise ValueError(f"n_heads must be >= 1, got {self.n_heads}")
+        if self.d_model < 1:
+            raise ValueError(f"d_model must be >= 1, got {self.d_model}")
+        if self.n_tabular_layers < 1:
+            raise ValueError(f"n_tabular_layers must be >= 1, got {self.n_tabular_layers}")
+        if self.n_text_layers < 1:
+            raise ValueError(f"n_text_layers must be >= 1, got {self.n_text_layers}")
+        if self.dim_feedforward < 1:
+            raise ValueError(f"dim_feedforward must be >= 1, got {self.dim_feedforward}")
+        if not 0.0 <= self.dropout < 1.0:
+            raise ValueError(f"dropout must be in [0, 1), got {self.dropout}")
         if self.d_model % self.n_heads != 0:
             raise ValueError(
                 f"d_model ({self.d_model}) must be divisible by n_heads ({self.n_heads})"

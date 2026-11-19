@@ -1,6 +1,7 @@
 """Comprehensive test suite for fusion-transformer."""
 
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -11,7 +12,7 @@ import torch.nn as nn
 
 from config import Config
 from main import main as cli_main
-from src.models import FeatureTokenizer, FusionTransformer
+from src.models import FeatureTokenizer, FusionTransformer, TextTransformerEncoder
 from src.pipeline import Pipeline
 from src.utils import (
     TextTokenizer,
@@ -20,6 +21,21 @@ from src.utils import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"n_heads": 0}, "n_heads must be >= 1"),
+        ({"n_tabular_layers": 0}, "n_tabular_layers must be >= 1"),
+        ({"n_text_layers": -1}, "n_text_layers must be >= 1"),
+        ({"dropout": 1.0}, "dropout must be in [0, 1)"),
+        ({"dropout": -0.1}, "dropout must be in [0, 1)"),
+    ],
+)
+def test_config_rejects_invalid_model_hyperparameters(overrides: dict[str, object], message: str) -> None:
+    with pytest.raises(ValueError, match=re.escape(message)):
+        Config(**overrides)  # type: ignore[arg-type]
 
 
 def test_forward_shapes_attention_and_no_nans() -> None:
@@ -66,6 +82,36 @@ def test_forward_shapes_attention_and_no_nans() -> None:
     assert attn_maps["txt_to_tab"].shape == (batch_size, seq_len, 1 + num_features)
     assert torch.isfinite(attn_maps["tab_to_txt"]).all()
     assert torch.isfinite(attn_maps["txt_to_tab"]).all()
+
+
+def test_text_encoder_rejects_sequences_beyond_positional_encoding_limit() -> None:
+    encoder = TextTransformerEncoder(
+        vocab_size=8,
+        d_model=16,
+        n_heads=4,
+        n_layers=1,
+        dim_feedforward=32,
+        max_seq_len=4,
+        dropout=0.0,
+    )
+
+    with pytest.raises(ValueError, match="sequence length 5 exceeds max_seq_len 4"):
+        encoder(torch.tensor([[TextTokenizer.CLS_ID, 3, 4, 5, 6]]))
+
+
+def test_text_encoder_rejects_all_padding_sequences() -> None:
+    encoder = TextTransformerEncoder(
+        vocab_size=8,
+        d_model=16,
+        n_heads=4,
+        n_layers=1,
+        dim_feedforward=32,
+        max_seq_len=4,
+        dropout=0.0,
+    )
+
+    with pytest.raises(ValueError, match="at least one non-padding token"):
+        encoder(torch.full((1, 4), TextTokenizer.PAD_ID, dtype=torch.long))
 
 
 def test_gradients_flow_through_both_encoders() -> None:
