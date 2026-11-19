@@ -136,6 +136,12 @@ class TextTransformerEncoder(nn.Module):
     def forward(self, input_ids: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         if input_ids.ndim != 2:
             raise ValueError(f"Expected input_ids shape (B, L), got {tuple(input_ids.shape)}")
+        if input_ids.dtype not in (torch.int32, torch.int64):
+            raise ValueError("input_ids must contain integer token IDs in the embedding vocabulary")
+        if input_ids.numel() and (
+            input_ids.min() < 0 or input_ids.max() >= self.embedding.num_embeddings
+        ):
+            raise ValueError("input_ids must contain integer token IDs in the embedding vocabulary")
         if input_ids.shape[1] > self.max_seq_len:
             raise ValueError(
                 f"Input sequence length {input_ids.shape[1]} exceeds max_seq_len {self.max_seq_len}"

@@ -99,6 +99,29 @@ def test_forward_shapes_attention_and_no_nans() -> None:
     assert torch.isfinite(attn_maps["txt_to_tab"]).all()
 
 
+@pytest.mark.parametrize(
+    "input_ids",
+    [
+        torch.tensor([[TextTokenizer.CLS_ID, -1]], dtype=torch.long),
+        torch.tensor([[TextTokenizer.CLS_ID, 8]], dtype=torch.long),
+        torch.tensor([[TextTokenizer.CLS_ID, 3.0]], dtype=torch.float32),
+    ],
+)
+def test_text_encoder_rejects_invalid_token_ids(input_ids: torch.Tensor) -> None:
+    encoder = TextTransformerEncoder(
+        vocab_size=8,
+        d_model=16,
+        n_heads=4,
+        n_layers=1,
+        dim_feedforward=32,
+        max_seq_len=4,
+        dropout=0.0,
+    )
+
+    with pytest.raises(ValueError, match="input_ids must contain integer token IDs in "):
+        encoder(input_ids)
+
+
 def test_text_encoder_rejects_sequences_beyond_positional_encoding_limit() -> None:
     encoder = TextTransformerEncoder(
         vocab_size=8,
