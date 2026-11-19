@@ -1,6 +1,7 @@
 """Configuration dataclass for the multimodal Fusion Transformer."""
 
 from dataclasses import dataclass
+import math
 
 
 @dataclass
@@ -27,6 +28,9 @@ class Config:
     seed: int = 42
 
     def __post_init__(self) -> None:
+        for name in ("dropout", "learning_rate", "weight_decay", "val_size", "test_size"):
+            if not math.isfinite(getattr(self, name)):
+                raise ValueError(f"{name} must be finite, got {getattr(self, name)!r}")
         if self.num_features < 1:
             raise ValueError(f"num_features must be >= 1, got {self.num_features}")
         if self.num_classes < 2:
@@ -51,6 +55,10 @@ class Config:
             raise ValueError(f"num_epochs must be >= 1, got {self.num_epochs}")
         if self.batch_size < 1:
             raise ValueError(f"batch_size must be >= 1, got {self.batch_size}")
+        if self.learning_rate <= 0:
+            raise ValueError(f"learning_rate must be > 0, got {self.learning_rate}")
+        if self.weight_decay < 0:
+            raise ValueError(f"weight_decay must be >= 0, got {self.weight_decay}")
         if self.val_size <= 0 or self.test_size <= 0 or (self.val_size + self.test_size) >= 1.0:
             raise ValueError("val_size and test_size must be positive and sum to < 1.0")
 

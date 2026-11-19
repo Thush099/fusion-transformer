@@ -31,6 +31,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
         ({"n_text_layers": -1}, "n_text_layers must be >= 1"),
         ({"dropout": 1.0}, "dropout must be in [0, 1)"),
         ({"dropout": -0.1}, "dropout must be in [0, 1)"),
+        ({"learning_rate": 0.0}, "learning_rate must be > 0"),
+        ({"learning_rate": -1e-3}, "learning_rate must be > 0"),
+        ({"learning_rate": float("nan")}, "learning_rate must be finite"),
+        ({"learning_rate": float("inf")}, "learning_rate must be finite"),
+        ({"weight_decay": -0.1}, "weight_decay must be >= 0"),
+        ({"weight_decay": float("nan")}, "weight_decay must be finite"),
+        ({"val_size": float("inf")}, "val_size must be finite"),
     ],
 )
 def test_config_rejects_invalid_model_hyperparameters(overrides: dict[str, object], message: str) -> None:
