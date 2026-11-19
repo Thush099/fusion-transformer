@@ -58,6 +58,14 @@ Train the model and save the best checkpoint (`outputs/fusion_transformer.pt`):
 python main.py --train
 ```
 
+Add `--min-macro-f1 FLOAT` to gate a CI job: the run exits non-zero when its macro
+F1 falls below the threshold in `[0, 1]`, and an out-of-range threshold is rejected
+rather than silently disabling the gate:
+
+```bash
+python main.py --train --min-macro-f1 0.75
+```
+
 Evaluate a saved checkpoint on the held-out test split:
 
 ```bash

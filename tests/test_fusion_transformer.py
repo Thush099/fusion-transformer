@@ -291,3 +291,31 @@ def test_cli_train_evaluate_and_demo(tmp_path: Path) -> None:
     )
     assert "Demo Complete:" in proc.stdout
     assert "Sample Multimodal Predictions:" in proc.stdout
+
+
+def test_exit_code_no_threshold_always_succeeds() -> None:
+    from main import exit_code_for
+
+    assert exit_code_for({"macro_f1": 0.0}, None) == 0
+
+
+def test_exit_code_gates_on_min_macro_f1() -> None:
+    from main import exit_code_for
+
+    assert exit_code_for({"macro_f1": 0.5}, 0.6) == 1
+    assert exit_code_for({"macro_f1": 0.6}, 0.6) == 0
+    assert exit_code_for({"macro_f1": 0.9}, 0.6) == 0
+
+
+def test_exit_code_rejects_invalid_threshold() -> None:
+    from main import exit_code_for
+
+    for bad in (float("nan"), float("inf"), float("-inf"), -0.1, 1.5):
+        with pytest.raises(ValueError, match="min_macro_f1 must be a finite value"):
+            exit_code_for({"macro_f1": 1.0}, bad)
+
+
+def test_cli_min_macro_f1_gates_the_run(tmp_path: Path) -> None:
+    argv = ["--train", "--epochs", "2", "--batch-size", "64", "--checkpoint", str(tmp_path / "g.pt")]
+    assert cli_main(argv + ["--min-macro-f1", "0.0"]) == 0
+    assert cli_main(argv + ["--min-macro-f1", "1.0"]) == 1
