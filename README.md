@@ -78,6 +78,23 @@ Run an end-to-end train, evaluation, and sample inference demo (also the default
 python main.py --demo
 ```
 
+### Training and evaluation flags
+
+`--train` and `--evaluate` accept the following options:
+
+| Flag | Default | Meaning |
+|---|---:|---|
+| `--epochs` | `15` | Number of training epochs |
+| `--batch-size` | `32` | Mini-batch size |
+| `--lr` | `2e-3` | AdamW learning rate (must be finite and `> 0`) |
+| `--checkpoint` | `outputs/fusion_transformer.pt` | Checkpoint path used for saving and loading |
+| `--seed` | `42` | Random seed |
+
+```bash
+python main.py --train --epochs 30 --batch-size 64 --lr 1e-3 --checkpoint outputs/run2.pt
+python main.py --evaluate --checkpoint outputs/run2.pt
+```
+
 ### Observed CLI Train & Evaluate Output
 
 ```text

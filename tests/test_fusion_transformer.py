@@ -12,12 +12,20 @@ import torch.nn as nn
 
 from config import Config
 from main import main as cli_main
-from src.models import FeatureTokenizer, FusionTransformer, TextTransformerEncoder
+from src.models import (
+    FeatureTokenizer,
+    FusionTransformer,
+    SinusoidalPositionalEncoding,
+    TextTransformerEncoder,
+)
 from src.pipeline import Pipeline
 from src.utils import (
+    MultimodalDataset,
+    TabularStandardizer,
     TextTokenizer,
     compute_classification_metrics,
     generate_synthetic_data,
+    set_seed,
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -326,3 +334,63 @@ def test_cli_min_macro_f1_gates_the_run(tmp_path: Path) -> None:
     argv = ["--train", "--epochs", "2", "--batch-size", "64", "--checkpoint", str(tmp_path / "g.pt")]
     assert cli_main(argv + ["--min-macro-f1", "0.0"]) == 0
     assert cli_main(argv + ["--min-macro-f1", "1.0"]) == 1
+
+
+class TestTabularStandardizer:
+    def test_transformed_columns_have_zero_mean_unit_std(self) -> None:
+        rng = np.random.default_rng(0)
+        X = rng.normal(loc=5.0, scale=2.0, size=(200, 3))
+        std = TabularStandardizer.fit(X)
+        Z = std.transform(X).numpy()
+        assert Z.mean(axis=0) == pytest.approx(np.zeros(3), abs=1e-4)
+        assert Z.std(axis=0) == pytest.approx(np.ones(3), abs=1e-2)
+
+    def test_constant_column_uses_unit_scale(self) -> None:
+        X = np.full((10, 1), 7.0)
+        std = TabularStandardizer.fit(X)
+        assert std.scale == [1.0]
+        assert std.transform(X).numpy() == pytest.approx(np.zeros((10, 1)))
+
+
+class TestMultimodalDataset:
+    def test_len_and_getitem_shapes(self) -> None:
+        ds = MultimodalDataset(
+            X_tabular=torch.zeros(5, 2),
+            input_ids=torch.zeros(5, 4, dtype=torch.long),
+            labels=torch.zeros(5, dtype=torch.long),
+        )
+        assert len(ds) == 5
+        x_tab, ids, y = ds[0]
+        assert x_tab.shape == (2,)
+        assert ids.shape == (4,)
+        assert y.shape == ()
+
+    def test_mismatched_lengths_rejected(self) -> None:
+        with pytest.raises(ValueError, match="equal length"):
+            MultimodalDataset(
+                X_tabular=torch.zeros(3, 2),
+                input_ids=torch.zeros(4, 2, dtype=torch.long),
+                labels=torch.zeros(3, dtype=torch.long),
+            )
+
+
+class TestSinusoidalPositionalEncoding:
+    def test_output_matches_input_shape(self) -> None:
+        pe = SinusoidalPositionalEncoding(d_model=8, max_len=16)
+        x = torch.zeros(2, 5, 8)
+        out = pe(x)
+        assert out.shape == x.shape
+
+    def test_positions_are_distinct(self) -> None:
+        pe = SinusoidalPositionalEncoding(d_model=8, max_len=16)
+        x = torch.zeros(1, 4, 8)
+        out = pe(x)[0]
+        assert not torch.allclose(out[0], out[1])
+
+
+class TestSetSeed:
+    def test_torch_stream_is_reproducible(self) -> None:
+        set_seed(99)
+        a = torch.randn(4).tolist()
+        set_seed(99)
+        assert torch.randn(4).tolist() == a
