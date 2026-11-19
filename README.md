@@ -33,7 +33,7 @@ A self-contained PyTorch multimodal classification model combining **FT-Transfor
 - **`TextTokenizer` & `TextTransformerEncoder`** ([src/utils.py](src/utils.py), [src/models.py](src/models.py)): Self-contained deterministic word tokenizer (no external pretrained weights required), sinusoidal positional encoding, padding masks, and `nn.TransformerEncoder`.
 - **`CrossAttentionFusion`** ([src/models.py](src/models.py)): Uses `nn.MultiheadAttention(..., batch_first=True)` for tabular-to-text and text-to-tabular attention, residual `LayerNorm`, gated modality projection, and interaction MLP head.
 - **Multimodal Synthetic Dataset** ([src/utils.py](src/utils.py)): Generates continuous tabular features paired with qualitative financial/risk text clauses where the label depends on both modalities and their cross-modal interaction term.
-- **Safe Checkpointing & Metrics** ([src/pipeline.py](src/pipeline.py)): Saves and loads checkpoints via `torch.load(..., weights_only=True)` (primitive config/vocab/scaler state + tensor `state_dict`), and reports **Accuracy**, **Macro Precision**, **Macro Recall**, **Macro-F1**, and **ROC-AUC**.
+- **Safe Checkpointing & Metrics** ([src/pipeline.py](src/pipeline.py)): Saves and loads checkpoints via `torch.load(..., weights_only=True)` (primitive config/vocab/scaler state + tensor `state_dict`), and reports **Accuracy**, **Macro Precision**, **Macro Recall**, **Macro-F1**, and **ROC-AUC**. The tabular standardizer rejects empty, non-finite, or mismatched feature arrays before producing invalid scaler state or model inputs.
 
 ## Repository Layout
 

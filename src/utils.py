@@ -181,12 +181,28 @@ class TabularStandardizer:
 
     @classmethod
     def fit(cls, X: np.ndarray) -> "TabularStandardizer":
+        X = np.asarray(X, dtype=np.float64)
+        if X.ndim != 2:
+            raise ValueError(f"X must be a 2D array, got shape {X.shape}")
+        if X.shape[0] == 0:
+            raise ValueError("X must contain at least one row")
+        if X.shape[1] == 0:
+            raise ValueError("X must contain at least one feature")
+        if not np.isfinite(X).all():
+            raise ValueError("X must contain only finite values")
         mean = X.mean(axis=0).astype(np.float64)
         scale = X.std(axis=0).astype(np.float64)
         scale = np.where(scale < 1e-8, 1.0, scale)
         return cls(mean=mean.tolist(), scale=scale.tolist())
 
     def transform(self, X: np.ndarray) -> torch.Tensor:
+        X = np.asarray(X, dtype=np.float64)
+        if X.ndim != 2:
+            raise ValueError(f"X must be a 2D array, got shape {X.shape}")
+        if X.shape[1] != len(self.mean):
+            raise ValueError(f"X has {X.shape[1]} features; expected {len(self.mean)} features")
+        if not np.isfinite(X).all():
+            raise ValueError("X must contain only finite values")
         mean_arr = np.asarray(self.mean, dtype=np.float32)
         scale_arr = np.asarray(self.scale, dtype=np.float32)
         scaled = (X.astype(np.float32) - mean_arr) / scale_arr

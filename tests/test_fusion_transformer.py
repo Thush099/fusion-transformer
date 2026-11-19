@@ -337,6 +337,29 @@ def test_cli_min_macro_f1_gates_the_run(tmp_path: Path) -> None:
 
 
 class TestTabularStandardizer:
+    @pytest.mark.parametrize(
+        ("X", "message"),
+        [
+            (np.empty((0, 2)), "X must contain at least one row"),
+            (np.empty((4, 0)), "X must contain at least one feature"),
+            (np.array([1.0, 2.0]), "X must be a 2D array"),
+            (np.array([[1.0, np.nan]]), "X must contain only finite values"),
+        ],
+    )
+    def test_fit_rejects_invalid_input(self, X: np.ndarray, message: str) -> None:
+        with pytest.raises(ValueError, match=re.escape(message)):
+            TabularStandardizer.fit(X)
+
+    def test_transform_rejects_feature_count_mismatch(self) -> None:
+        standardizer = TabularStandardizer.fit(np.ones((3, 2)))
+        with pytest.raises(ValueError, match="expected 2 features"):
+            standardizer.transform(np.ones((4, 3)))
+
+    def test_transform_rejects_non_finite_values(self) -> None:
+        standardizer = TabularStandardizer.fit(np.ones((3, 2)))
+        with pytest.raises(ValueError, match="X must contain only finite values"):
+            standardizer.transform(np.array([[1.0, np.inf]]))
+
     def test_transformed_columns_have_zero_mean_unit_std(self) -> None:
         rng = np.random.default_rng(0)
         X = rng.normal(loc=5.0, scale=2.0, size=(200, 3))
