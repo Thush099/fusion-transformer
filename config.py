@@ -45,6 +45,8 @@ class Config:
             raise ValueError(f"n_text_layers must be >= 1, got {self.n_text_layers}")
         if self.dim_feedforward < 1:
             raise ValueError(f"dim_feedforward must be >= 1, got {self.dim_feedforward}")
+        if self.max_seq_len < 1:
+            raise ValueError(f"max_seq_len must be >= 1, got {self.max_seq_len}")
         if not 0.0 <= self.dropout < 1.0:
             raise ValueError(f"dropout must be in [0, 1), got {self.dropout}")
         if self.d_model % self.n_heads != 0:
@@ -55,10 +57,20 @@ class Config:
             raise ValueError(f"num_epochs must be >= 1, got {self.num_epochs}")
         if self.batch_size < 1:
             raise ValueError(f"batch_size must be >= 1, got {self.batch_size}")
+        if self.num_samples < 1:
+            raise ValueError(f"num_samples must be >= 1, got {self.num_samples}")
         if self.learning_rate <= 0:
             raise ValueError(f"learning_rate must be > 0, got {self.learning_rate}")
         if self.weight_decay < 0:
             raise ValueError(f"weight_decay must be >= 0, got {self.weight_decay}")
+        if (
+            isinstance(self.seed, bool)
+            or not isinstance(self.seed, int)
+            or not 0 <= self.seed <= 2**32 - 1
+        ):
+            raise ValueError(
+                f"seed must be an integer in [0, 2**32 - 1], got {self.seed!r}"
+            )
         if self.val_size <= 0 or self.test_size <= 0 or (self.val_size + self.test_size) >= 1.0:
             raise ValueError("val_size and test_size must be positive and sum to < 1.0")
 

@@ -46,6 +46,15 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
         ({"weight_decay": -0.1}, "weight_decay must be >= 0"),
         ({"weight_decay": float("nan")}, "weight_decay must be finite"),
         ({"val_size": float("inf")}, "val_size must be finite"),
+        ({"max_seq_len": 0}, "max_seq_len must be >= 1"),
+        ({"max_seq_len": -5}, "max_seq_len must be >= 1"),
+        ({"num_samples": 0}, "num_samples must be >= 1"),
+        ({"num_samples": -5}, "num_samples must be >= 1"),
+        ({"seed": -5}, "seed must be an integer in [0, 2**32 - 1]"),
+        ({"seed": 2**32}, "seed must be an integer in [0, 2**32 - 1]"),
+        ({"seed": 42.5}, "seed must be an integer in [0, 2**32 - 1]"),
+        ({"seed": float("nan")}, "seed must be an integer in [0, 2**32 - 1]"),
+        ({"seed": True}, "seed must be an integer in [0, 2**32 - 1]"),
     ],
 )
 def test_config_rejects_invalid_model_hyperparameters(overrides: dict[str, object], message: str) -> None:
