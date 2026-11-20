@@ -39,7 +39,7 @@ A self-contained PyTorch multimodal classification model combining **FT-Transfor
 
 - `config.py` — Validated `Config` dataclass for model, training, and split settings; rejects invalid dimensions, non-finite values, and out-of-range `max_seq_len`, `num_samples`, and `seed` at construction.
 - `main.py` — CLI entry point supporting `--train`, `--evaluate`, and `--demo`.
-- `src/models.py` — `FeatureTokenizer`, `TabularTransformerEncoder`, `TextTransformerEncoder`, `CrossAttentionFusion`, and `FusionTransformer`.
+- `src/models.py` — `FeatureTokenizer`, `TabularTransformerEncoder`, `TextTransformerEncoder`, `CrossAttentionFusion`, and `FusionTransformer`. Every module validates its dimension arguments at construction (positive integer sizes, `d_model` divisible by `n_heads`, `dropout` in `[0, 1)`, `num_classes >= 2`, and `pad_token_id` within the vocabulary), so direct construction fails with a clear `ValueError` instead of a degenerate module or an opaque framework error.
 - `src/utils.py` — `TextTokenizer`, `TabularStandardizer`, `MultimodalDataset`, synthetic multimodal generator, and `scikit-learn` metric helpers.
 - `src/pipeline.py` — `Pipeline` handling stratified train/val/test splits, `DataLoader` training, checkpointing, evaluation, and inference.
 - `tests/test_fusion_transformer.py` — Unit and integration tests for shapes, gradient flow, training convergence, checkpoint roundtrip, and CLI execution.

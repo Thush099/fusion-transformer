@@ -13,9 +13,11 @@ import torch.nn as nn
 from config import Config
 from main import main as cli_main
 from src.models import (
+    CrossAttentionFusion,
     FeatureTokenizer,
     FusionTransformer,
     SinusoidalPositionalEncoding,
+    TabularTransformerEncoder,
     TextTransformerEncoder,
 )
 from src.pipeline import Pipeline
@@ -60,6 +62,115 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 def test_config_rejects_invalid_model_hyperparameters(overrides: dict[str, object], message: str) -> None:
     with pytest.raises(ValueError, match=re.escape(message)):
         Config(**overrides)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("factory", "message"),
+    [
+        (
+            lambda: FeatureTokenizer(num_features=0, d_model=8),
+            "num_features must be a positive integer",
+        ),
+        (
+            lambda: FeatureTokenizer(num_features=4, d_model=0),
+            "d_model must be a positive integer",
+        ),
+        (
+            lambda: FeatureTokenizer(num_features=True, d_model=8),
+            "num_features must be a positive integer",
+        ),
+        (
+            lambda: FeatureTokenizer(num_features=2.5, d_model=8),
+            "num_features must be a positive integer",
+        ),
+        (
+            lambda: TabularTransformerEncoder(4, 8, 2, 0, 16),
+            "n_layers must be a positive integer",
+        ),
+        (
+            lambda: TabularTransformerEncoder(4, 8, 0, 1, 16),
+            "n_heads must be a positive integer",
+        ),
+        (
+            lambda: TabularTransformerEncoder(4, 8, 2, 1, 0),
+            "dim_feedforward must be a positive integer",
+        ),
+        (
+            lambda: TabularTransformerEncoder(4, 6, 4, 1, 16),
+            "d_model (6) must be divisible by n_heads (4)",
+        ),
+        (
+            lambda: TabularTransformerEncoder(4, 8, 2, 1, 16, dropout=1.5),
+            "dropout must be in [0, 1)",
+        ),
+        (
+            lambda: SinusoidalPositionalEncoding(d_model=0, max_len=8),
+            "d_model must be a positive integer",
+        ),
+        (
+            lambda: SinusoidalPositionalEncoding(d_model=8, max_len=0),
+            "max_len must be a positive integer",
+        ),
+        (
+            lambda: TextTransformerEncoder(0, 8, 2, 1, 16),
+            "vocab_size must be a positive integer",
+        ),
+        (
+            lambda: TextTransformerEncoder(4, 8, 2, 1, 16, pad_token_id=5),
+            "pad_token_id must be in [0, vocab_size)",
+        ),
+        (
+            lambda: TextTransformerEncoder(4, 8, 2, 1, 16, pad_token_id=-1),
+            "pad_token_id must be in [0, vocab_size)",
+        ),
+        (
+            lambda: TextTransformerEncoder(4, 8, 2, 1, 0),
+            "dim_feedforward must be a positive integer",
+        ),
+        (
+            lambda: TextTransformerEncoder(4, 6, 4, 1, 16),
+            "d_model (6) must be divisible by n_heads (4)",
+        ),
+        (
+            lambda: CrossAttentionFusion(6, 4, 2),
+            "d_model (6) must be divisible by n_heads (4)",
+        ),
+        (
+            lambda: CrossAttentionFusion(8, 2, 1),
+            "num_classes must be >= 2",
+        ),
+        (
+            lambda: CrossAttentionFusion(8, 2, 2, dropout=float("nan")),
+            "dropout must be in [0, 1)",
+        ),
+        (
+            lambda: FusionTransformer(num_features=0, vocab_size=8),
+            "num_features must be a positive integer",
+        ),
+        (
+            lambda: FusionTransformer(num_features=4, vocab_size=0),
+            "vocab_size must be a positive integer",
+        ),
+        (
+            lambda: FusionTransformer(num_features=4, vocab_size=8, n_text_layers=0),
+            "n_text_layers must be a positive integer",
+        ),
+    ],
+)
+def test_model_constructors_reject_degenerate_dimensions(
+    factory: object, message: str
+) -> None:
+    with pytest.raises(ValueError, match=re.escape(message)):
+        factory()  # type: ignore[operator]
+
+
+def test_model_constructors_accept_integral_dimensions() -> None:
+    """NumPy integer dimensions remain valid constructor inputs."""
+    tokenizer = FeatureTokenizer(num_features=np.int64(3), d_model=np.int64(8))
+    assert tokenizer(torch.randn(2, 3)).shape == (2, 4, 8)
+
+    pe = SinusoidalPositionalEncoding(d_model=np.int64(8), max_len=np.int64(16))
+    assert pe(torch.zeros(2, 5, 8)).shape == (2, 5, 8)
 
 
 def test_forward_shapes_attention_and_no_nans() -> None:
