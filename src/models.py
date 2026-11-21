@@ -1,10 +1,31 @@
 """Multimodal Fusion Transformer architecture combining FT-Transformer and cross-attention."""
 
 import math
+from numbers import Integral, Real
 from typing import Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
+
+
+def _require_positive_int(name: str, value: int) -> None:
+    if isinstance(value, bool) or not isinstance(value, Integral) or value < 1:
+        raise ValueError(f"{name} must be a positive integer, got {value!r}")
+
+
+def _require_dropout(dropout: float) -> None:
+    if (
+        isinstance(dropout, bool)
+        or not isinstance(dropout, Real)
+        or not math.isfinite(dropout)
+        or not 0.0 <= dropout < 1.0
+    ):
+        raise ValueError(f"dropout must be in [0, 1), got {dropout!r}")
+
+
+def _require_divisible_heads(d_model: int, n_heads: int) -> None:
+    if d_model % n_heads != 0:
+        raise ValueError(f"d_model ({d_model}) must be divisible by n_heads ({n_heads})")
 
 
 class FeatureTokenizer(nn.Module):
@@ -16,6 +37,8 @@ class FeatureTokenizer(nn.Module):
 
     def __init__(self, num_features: int, d_model: int) -> None:
         super().__init__()
+        _require_positive_int("num_features", num_features)
+        _require_positive_int("d_model", d_model)
         self.num_features = num_features
         self.d_model = d_model
         self.weight = nn.Parameter(torch.empty(num_features, d_model))
@@ -53,6 +76,13 @@ class TabularTransformerEncoder(nn.Module):
         dropout: float = 0.1,
     ) -> None:
         super().__init__()
+        _require_positive_int("num_features", num_features)
+        _require_positive_int("d_model", d_model)
+        _require_positive_int("n_heads", n_heads)
+        _require_positive_int("n_layers", n_layers)
+        _require_positive_int("dim_feedforward", dim_feedforward)
+        _require_dropout(dropout)
+        _require_divisible_heads(d_model, n_heads)
         self.feature_tokenizer = FeatureTokenizer(num_features=num_features, d_model=d_model)
         self.norm_in = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(dropout)
@@ -82,6 +112,8 @@ class SinusoidalPositionalEncoding(nn.Module):
 
     def __init__(self, d_model: int, max_len: int = 128) -> None:
         super().__init__()
+        _require_positive_int("d_model", d_model)
+        _require_positive_int("max_len", max_len)
         pe = torch.zeros(max_len, d_model, dtype=torch.float32)
         position = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
         div_term = torch.exp(
@@ -111,7 +143,24 @@ class TextTransformerEncoder(nn.Module):
         pad_token_id: int = 0,
     ) -> None:
         super().__init__()
+        _require_positive_int("vocab_size", vocab_size)
+        _require_positive_int("d_model", d_model)
+        _require_positive_int("n_heads", n_heads)
+        _require_positive_int("n_layers", n_layers)
+        _require_positive_int("dim_feedforward", dim_feedforward)
+        _require_positive_int("max_seq_len", max_seq_len)
+        _require_dropout(dropout)
+        _require_divisible_heads(d_model, n_heads)
+        if (
+            isinstance(pad_token_id, bool)
+            or not isinstance(pad_token_id, Integral)
+            or not 0 <= pad_token_id < vocab_size
+        ):
+            raise ValueError(
+                f"pad_token_id must be in [0, vocab_size), got {pad_token_id!r}"
+            )
         self.d_model = d_model
+        self.max_seq_len = max_seq_len
         self.pad_token_id = pad_token_id
         self.embedding = nn.Embedding(vocab_size, d_model, padding_idx=pad_token_id)
         self.pos_encoding = SinusoidalPositionalEncoding(d_model=d_model, max_len=max_seq_len)
@@ -135,7 +184,19 @@ class TextTransformerEncoder(nn.Module):
     def forward(self, input_ids: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         if input_ids.ndim != 2:
             raise ValueError(f"Expected input_ids shape (B, L), got {tuple(input_ids.shape)}")
+        if input_ids.dtype not in (torch.int32, torch.int64):
+            raise ValueError("input_ids must contain integer token IDs in the embedding vocabulary")
+        if input_ids.numel() and (
+            input_ids.min() < 0 or input_ids.max() >= self.embedding.num_embeddings
+        ):
+            raise ValueError("input_ids must contain integer token IDs in the embedding vocabulary")
+        if input_ids.shape[1] > self.max_seq_len:
+            raise ValueError(
+                f"Input sequence length {input_ids.shape[1]} exceeds max_seq_len {self.max_seq_len}"
+            )
         pad_mask = input_ids == self.pad_token_id
+        if pad_mask.all(dim=1).any():
+            raise ValueError("Each sequence must contain at least one non-padding token")
         x = self.embedding(input_ids) * math.sqrt(self.d_model)
         x = self.pos_encoding(x)
         x = self.dropout(self.norm_in(x))
@@ -154,6 +215,16 @@ class CrossAttentionFusion(nn.Module):
         dropout: float = 0.1,
     ) -> None:
         super().__init__()
+        _require_positive_int("d_model", d_model)
+        _require_positive_int("n_heads", n_heads)
+        _require_dropout(dropout)
+        _require_divisible_heads(d_model, n_heads)
+        if (
+            isinstance(num_classes, bool)
+            or not isinstance(num_classes, Integral)
+            or num_classes < 2
+        ):
+            raise ValueError(f"num_classes must be >= 2, got {num_classes!r}")
         self.cross_attention = nn.MultiheadAttention(
             embed_dim=d_model,
             num_heads=n_heads,
@@ -245,6 +316,8 @@ class FusionTransformer(nn.Module):
         pad_token_id: int = 0,
     ) -> None:
         super().__init__()
+        _require_positive_int("n_tabular_layers", n_tabular_layers)
+        _require_positive_int("n_text_layers", n_text_layers)
         self.tabular_encoder = TabularTransformerEncoder(
             num_features=num_features,
             d_model=d_model,

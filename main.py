@@ -1,6 +1,7 @@
 """CLI entry point for training, evaluating, and running the Fusion Transformer demo."""
 
 import argparse
+import math
 from typing import Optional, Sequence
 
 from config import Config
@@ -32,7 +33,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to save/load model checkpoint",
     )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument(
+        "--min-macro-f1",
+        type=float,
+        default=None,
+        help=(
+            "Exit non-zero when the run's macro F1 is below this threshold in "
+            "[0, 1], so training/evaluation can gate a CI job."
+        ),
+    )
     return parser
+
+
+def exit_code_for(metrics: dict, min_macro_f1: Optional[float]) -> int:
+    """Map reported metrics to a process exit code under a macro F1 gate.
+
+    Returns 0 when no threshold is given or the run's macro F1 meets it, and 1
+    when it falls below. The threshold must be a finite value in [0, 1];
+    anything else raises ``ValueError`` so a typo cannot silently disable gating.
+    """
+    if min_macro_f1 is None:
+        return 0
+    if not math.isfinite(min_macro_f1) or not 0.0 <= min_macro_f1 <= 1.0:
+        raise ValueError(
+            "min_macro_f1 must be a finite value in [0, 1]; "
+            f"got {min_macro_f1!r}"
+        )
+    return 1 if metrics["macro_f1"] < min_macro_f1 else 0
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -56,7 +83,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             f"precision={metrics['precision']:.4f}, recall={metrics['recall']:.4f}, "
             f"macro_f1={metrics['macro_f1']:.4f}, roc_auc={metrics['roc_auc']:.4f}"
         )
-        return 0
+        return exit_code_for(metrics, args.min_macro_f1)
 
     if args.train:
         summary = pipeline.train()
@@ -75,7 +102,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             f"macro_f1={m['macro_f1']:.4f}, roc_auc={m['roc_auc']:.4f}"
         )
 
-    return 0
+    return exit_code_for(m if args.evaluate else summary.test_metrics, args.min_macro_f1)
 
 
 if __name__ == "__main__":

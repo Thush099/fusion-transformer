@@ -1,6 +1,7 @@
 """Comprehensive test suite for fusion-transformer."""
 
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -11,15 +12,165 @@ import torch.nn as nn
 
 from config import Config
 from main import main as cli_main
-from src.models import FeatureTokenizer, FusionTransformer
+from src.models import (
+    CrossAttentionFusion,
+    FeatureTokenizer,
+    FusionTransformer,
+    SinusoidalPositionalEncoding,
+    TabularTransformerEncoder,
+    TextTransformerEncoder,
+)
 from src.pipeline import Pipeline
 from src.utils import (
+    MultimodalDataset,
+    TabularStandardizer,
     TextTokenizer,
     compute_classification_metrics,
     generate_synthetic_data,
+    set_seed,
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"n_heads": 0}, "n_heads must be >= 1"),
+        ({"n_tabular_layers": 0}, "n_tabular_layers must be >= 1"),
+        ({"n_text_layers": -1}, "n_text_layers must be >= 1"),
+        ({"dropout": 1.0}, "dropout must be in [0, 1)"),
+        ({"dropout": -0.1}, "dropout must be in [0, 1)"),
+        ({"learning_rate": 0.0}, "learning_rate must be > 0"),
+        ({"learning_rate": -1e-3}, "learning_rate must be > 0"),
+        ({"learning_rate": float("nan")}, "learning_rate must be finite"),
+        ({"learning_rate": float("inf")}, "learning_rate must be finite"),
+        ({"weight_decay": -0.1}, "weight_decay must be >= 0"),
+        ({"weight_decay": float("nan")}, "weight_decay must be finite"),
+        ({"val_size": float("inf")}, "val_size must be finite"),
+        ({"max_seq_len": 0}, "max_seq_len must be >= 1"),
+        ({"max_seq_len": -5}, "max_seq_len must be >= 1"),
+        ({"num_samples": 0}, "num_samples must be >= 1"),
+        ({"num_samples": -5}, "num_samples must be >= 1"),
+        ({"seed": -5}, "seed must be an integer in [0, 2**32 - 1]"),
+        ({"seed": 2**32}, "seed must be an integer in [0, 2**32 - 1]"),
+        ({"seed": 42.5}, "seed must be an integer in [0, 2**32 - 1]"),
+        ({"seed": float("nan")}, "seed must be an integer in [0, 2**32 - 1]"),
+        ({"seed": True}, "seed must be an integer in [0, 2**32 - 1]"),
+    ],
+)
+def test_config_rejects_invalid_model_hyperparameters(overrides: dict[str, object], message: str) -> None:
+    with pytest.raises(ValueError, match=re.escape(message)):
+        Config(**overrides)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("factory", "message"),
+    [
+        (
+            lambda: FeatureTokenizer(num_features=0, d_model=8),
+            "num_features must be a positive integer",
+        ),
+        (
+            lambda: FeatureTokenizer(num_features=4, d_model=0),
+            "d_model must be a positive integer",
+        ),
+        (
+            lambda: FeatureTokenizer(num_features=True, d_model=8),
+            "num_features must be a positive integer",
+        ),
+        (
+            lambda: FeatureTokenizer(num_features=2.5, d_model=8),
+            "num_features must be a positive integer",
+        ),
+        (
+            lambda: TabularTransformerEncoder(4, 8, 2, 0, 16),
+            "n_layers must be a positive integer",
+        ),
+        (
+            lambda: TabularTransformerEncoder(4, 8, 0, 1, 16),
+            "n_heads must be a positive integer",
+        ),
+        (
+            lambda: TabularTransformerEncoder(4, 8, 2, 1, 0),
+            "dim_feedforward must be a positive integer",
+        ),
+        (
+            lambda: TabularTransformerEncoder(4, 6, 4, 1, 16),
+            "d_model (6) must be divisible by n_heads (4)",
+        ),
+        (
+            lambda: TabularTransformerEncoder(4, 8, 2, 1, 16, dropout=1.5),
+            "dropout must be in [0, 1)",
+        ),
+        (
+            lambda: SinusoidalPositionalEncoding(d_model=0, max_len=8),
+            "d_model must be a positive integer",
+        ),
+        (
+            lambda: SinusoidalPositionalEncoding(d_model=8, max_len=0),
+            "max_len must be a positive integer",
+        ),
+        (
+            lambda: TextTransformerEncoder(0, 8, 2, 1, 16),
+            "vocab_size must be a positive integer",
+        ),
+        (
+            lambda: TextTransformerEncoder(4, 8, 2, 1, 16, pad_token_id=5),
+            "pad_token_id must be in [0, vocab_size)",
+        ),
+        (
+            lambda: TextTransformerEncoder(4, 8, 2, 1, 16, pad_token_id=-1),
+            "pad_token_id must be in [0, vocab_size)",
+        ),
+        (
+            lambda: TextTransformerEncoder(4, 8, 2, 1, 0),
+            "dim_feedforward must be a positive integer",
+        ),
+        (
+            lambda: TextTransformerEncoder(4, 6, 4, 1, 16),
+            "d_model (6) must be divisible by n_heads (4)",
+        ),
+        (
+            lambda: CrossAttentionFusion(6, 4, 2),
+            "d_model (6) must be divisible by n_heads (4)",
+        ),
+        (
+            lambda: CrossAttentionFusion(8, 2, 1),
+            "num_classes must be >= 2",
+        ),
+        (
+            lambda: CrossAttentionFusion(8, 2, 2, dropout=float("nan")),
+            "dropout must be in [0, 1)",
+        ),
+        (
+            lambda: FusionTransformer(num_features=0, vocab_size=8),
+            "num_features must be a positive integer",
+        ),
+        (
+            lambda: FusionTransformer(num_features=4, vocab_size=0),
+            "vocab_size must be a positive integer",
+        ),
+        (
+            lambda: FusionTransformer(num_features=4, vocab_size=8, n_text_layers=0),
+            "n_text_layers must be a positive integer",
+        ),
+    ],
+)
+def test_model_constructors_reject_degenerate_dimensions(
+    factory: object, message: str
+) -> None:
+    with pytest.raises(ValueError, match=re.escape(message)):
+        factory()  # type: ignore[operator]
+
+
+def test_model_constructors_accept_integral_dimensions() -> None:
+    """NumPy integer dimensions remain valid constructor inputs."""
+    tokenizer = FeatureTokenizer(num_features=np.int64(3), d_model=np.int64(8))
+    assert tokenizer(torch.randn(2, 3)).shape == (2, 4, 8)
+
+    pe = SinusoidalPositionalEncoding(d_model=np.int64(8), max_len=np.int64(16))
+    assert pe(torch.zeros(2, 5, 8)).shape == (2, 5, 8)
 
 
 def test_forward_shapes_attention_and_no_nans() -> None:
@@ -66,6 +217,59 @@ def test_forward_shapes_attention_and_no_nans() -> None:
     assert attn_maps["txt_to_tab"].shape == (batch_size, seq_len, 1 + num_features)
     assert torch.isfinite(attn_maps["tab_to_txt"]).all()
     assert torch.isfinite(attn_maps["txt_to_tab"]).all()
+
+
+@pytest.mark.parametrize(
+    "input_ids",
+    [
+        torch.tensor([[TextTokenizer.CLS_ID, -1]], dtype=torch.long),
+        torch.tensor([[TextTokenizer.CLS_ID, 8]], dtype=torch.long),
+        torch.tensor([[TextTokenizer.CLS_ID, 3.0]], dtype=torch.float32),
+    ],
+)
+def test_text_encoder_rejects_invalid_token_ids(input_ids: torch.Tensor) -> None:
+    encoder = TextTransformerEncoder(
+        vocab_size=8,
+        d_model=16,
+        n_heads=4,
+        n_layers=1,
+        dim_feedforward=32,
+        max_seq_len=4,
+        dropout=0.0,
+    )
+
+    with pytest.raises(ValueError, match="input_ids must contain integer token IDs in "):
+        encoder(input_ids)
+
+
+def test_text_encoder_rejects_sequences_beyond_positional_encoding_limit() -> None:
+    encoder = TextTransformerEncoder(
+        vocab_size=8,
+        d_model=16,
+        n_heads=4,
+        n_layers=1,
+        dim_feedforward=32,
+        max_seq_len=4,
+        dropout=0.0,
+    )
+
+    with pytest.raises(ValueError, match="sequence length 5 exceeds max_seq_len 4"):
+        encoder(torch.tensor([[TextTokenizer.CLS_ID, 3, 4, 5, 6]]))
+
+
+def test_text_encoder_rejects_all_padding_sequences() -> None:
+    encoder = TextTransformerEncoder(
+        vocab_size=8,
+        d_model=16,
+        n_heads=4,
+        n_layers=1,
+        dim_feedforward=32,
+        max_seq_len=4,
+        dropout=0.0,
+    )
+
+    with pytest.raises(ValueError, match="at least one non-padding token"):
+        encoder(torch.full((1, 4), TextTokenizer.PAD_ID, dtype=torch.long))
 
 
 def test_gradients_flow_through_both_encoders() -> None:
@@ -245,3 +449,114 @@ def test_cli_train_evaluate_and_demo(tmp_path: Path) -> None:
     )
     assert "Demo Complete:" in proc.stdout
     assert "Sample Multimodal Predictions:" in proc.stdout
+
+
+def test_exit_code_no_threshold_always_succeeds() -> None:
+    from main import exit_code_for
+
+    assert exit_code_for({"macro_f1": 0.0}, None) == 0
+
+
+def test_exit_code_gates_on_min_macro_f1() -> None:
+    from main import exit_code_for
+
+    assert exit_code_for({"macro_f1": 0.5}, 0.6) == 1
+    assert exit_code_for({"macro_f1": 0.6}, 0.6) == 0
+    assert exit_code_for({"macro_f1": 0.9}, 0.6) == 0
+
+
+def test_exit_code_rejects_invalid_threshold() -> None:
+    from main import exit_code_for
+
+    for bad in (float("nan"), float("inf"), float("-inf"), -0.1, 1.5):
+        with pytest.raises(ValueError, match="min_macro_f1 must be a finite value"):
+            exit_code_for({"macro_f1": 1.0}, bad)
+
+
+def test_cli_min_macro_f1_gates_the_run(tmp_path: Path) -> None:
+    argv = ["--train", "--epochs", "2", "--batch-size", "64", "--checkpoint", str(tmp_path / "g.pt")]
+    assert cli_main(argv + ["--min-macro-f1", "0.0"]) == 0
+    assert cli_main(argv + ["--min-macro-f1", "1.0"]) == 1
+
+
+class TestTabularStandardizer:
+    @pytest.mark.parametrize(
+        ("X", "message"),
+        [
+            (np.empty((0, 2)), "X must contain at least one row"),
+            (np.empty((4, 0)), "X must contain at least one feature"),
+            (np.array([1.0, 2.0]), "X must be a 2D array"),
+            (np.array([[1.0, np.nan]]), "X must contain only finite values"),
+        ],
+    )
+    def test_fit_rejects_invalid_input(self, X: np.ndarray, message: str) -> None:
+        with pytest.raises(ValueError, match=re.escape(message)):
+            TabularStandardizer.fit(X)
+
+    def test_transform_rejects_feature_count_mismatch(self) -> None:
+        standardizer = TabularStandardizer.fit(np.ones((3, 2)))
+        with pytest.raises(ValueError, match="expected 2 features"):
+            standardizer.transform(np.ones((4, 3)))
+
+    def test_transform_rejects_non_finite_values(self) -> None:
+        standardizer = TabularStandardizer.fit(np.ones((3, 2)))
+        with pytest.raises(ValueError, match="X must contain only finite values"):
+            standardizer.transform(np.array([[1.0, np.inf]]))
+
+    def test_transformed_columns_have_zero_mean_unit_std(self) -> None:
+        rng = np.random.default_rng(0)
+        X = rng.normal(loc=5.0, scale=2.0, size=(200, 3))
+        std = TabularStandardizer.fit(X)
+        Z = std.transform(X).numpy()
+        assert Z.mean(axis=0) == pytest.approx(np.zeros(3), abs=1e-4)
+        assert Z.std(axis=0) == pytest.approx(np.ones(3), abs=1e-2)
+
+    def test_constant_column_uses_unit_scale(self) -> None:
+        X = np.full((10, 1), 7.0)
+        std = TabularStandardizer.fit(X)
+        assert std.scale == [1.0]
+        assert std.transform(X).numpy() == pytest.approx(np.zeros((10, 1)))
+
+
+class TestMultimodalDataset:
+    def test_len_and_getitem_shapes(self) -> None:
+        ds = MultimodalDataset(
+            X_tabular=torch.zeros(5, 2),
+            input_ids=torch.zeros(5, 4, dtype=torch.long),
+            labels=torch.zeros(5, dtype=torch.long),
+        )
+        assert len(ds) == 5
+        x_tab, ids, y = ds[0]
+        assert x_tab.shape == (2,)
+        assert ids.shape == (4,)
+        assert y.shape == ()
+
+    def test_mismatched_lengths_rejected(self) -> None:
+        with pytest.raises(ValueError, match="equal length"):
+            MultimodalDataset(
+                X_tabular=torch.zeros(3, 2),
+                input_ids=torch.zeros(4, 2, dtype=torch.long),
+                labels=torch.zeros(3, dtype=torch.long),
+            )
+
+
+class TestSinusoidalPositionalEncoding:
+    def test_output_matches_input_shape(self) -> None:
+        pe = SinusoidalPositionalEncoding(d_model=8, max_len=16)
+        x = torch.zeros(2, 5, 8)
+        out = pe(x)
+        assert out.shape == x.shape
+
+    def test_positions_are_distinct(self) -> None:
+        pe = SinusoidalPositionalEncoding(d_model=8, max_len=16)
+        x = torch.zeros(1, 4, 8)
+        out = pe(x)[0]
+        assert not torch.allclose(out[0], out[1])
+
+
+class TestSetSeed:
+    def test_torch_stream_is_reproducible(self) -> None:
+        set_seed(99)
+        a = torch.randn(4).tolist()
+        set_seed(99)
+        assert torch.randn(4).tolist() == a

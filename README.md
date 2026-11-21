@@ -33,13 +33,13 @@ A self-contained PyTorch multimodal classification model combining **FT-Transfor
 - **`TextTokenizer` & `TextTransformerEncoder`** ([src/utils.py](src/utils.py), [src/models.py](src/models.py)): Self-contained deterministic word tokenizer (no external pretrained weights required), sinusoidal positional encoding, padding masks, and `nn.TransformerEncoder`.
 - **`CrossAttentionFusion`** ([src/models.py](src/models.py)): Uses `nn.MultiheadAttention(..., batch_first=True)` for tabular-to-text and text-to-tabular attention, residual `LayerNorm`, gated modality projection, and interaction MLP head.
 - **Multimodal Synthetic Dataset** ([src/utils.py](src/utils.py)): Generates continuous tabular features paired with qualitative financial/risk text clauses where the label depends on both modalities and their cross-modal interaction term.
-- **Safe Checkpointing & Metrics** ([src/pipeline.py](src/pipeline.py)): Saves and loads checkpoints via `torch.load(..., weights_only=True)` (primitive config/vocab/scaler state + tensor `state_dict`), and reports **Accuracy**, **Macro Precision**, **Macro Recall**, **Macro-F1**, and **ROC-AUC**.
+- **Safe Checkpointing & Metrics** ([src/pipeline.py](src/pipeline.py)): Saves and loads checkpoints via `torch.load(..., weights_only=True)` (primitive config/vocab/scaler state + tensor `state_dict`), and reports **Accuracy**, **Macro Precision**, **Macro Recall**, **Macro-F1**, and **ROC-AUC**. The tabular standardizer rejects empty, non-finite, or mismatched feature arrays before producing invalid scaler state or model inputs.
 
 ## Repository Layout
 
-- `config.py` — Validated `Config` dataclass for model, training, and split settings.
+- `config.py` — Validated `Config` dataclass for model, training, and split settings; rejects invalid dimensions, non-finite values, and out-of-range `max_seq_len`, `num_samples`, and `seed` at construction.
 - `main.py` — CLI entry point supporting `--train`, `--evaluate`, and `--demo`.
-- `src/models.py` — `FeatureTokenizer`, `TabularTransformerEncoder`, `TextTransformerEncoder`, `CrossAttentionFusion`, and `FusionTransformer`.
+- `src/models.py` — `FeatureTokenizer`, `TabularTransformerEncoder`, `TextTransformerEncoder`, `CrossAttentionFusion`, and `FusionTransformer`. Every module validates its dimension arguments at construction (positive integer sizes, `d_model` divisible by `n_heads`, `dropout` in `[0, 1)`, `num_classes >= 2`, and `pad_token_id` within the vocabulary), so direct construction fails with a clear `ValueError` instead of a degenerate module or an opaque framework error.
 - `src/utils.py` — `TextTokenizer`, `TabularStandardizer`, `MultimodalDataset`, synthetic multimodal generator, and `scikit-learn` metric helpers.
 - `src/pipeline.py` — `Pipeline` handling stratified train/val/test splits, `DataLoader` training, checkpointing, evaluation, and inference.
 - `tests/test_fusion_transformer.py` — Unit and integration tests for shapes, gradient flow, training convergence, checkpoint roundtrip, and CLI execution.
@@ -58,6 +58,14 @@ Train the model and save the best checkpoint (`outputs/fusion_transformer.pt`):
 python main.py --train
 ```
 
+Add `--min-macro-f1 FLOAT` to gate a CI job: the run exits non-zero when its macro
+F1 falls below the threshold in `[0, 1]`, and an out-of-range threshold is rejected
+rather than silently disabling the gate:
+
+```bash
+python main.py --train --min-macro-f1 0.75
+```
+
 Evaluate a saved checkpoint on the held-out test split:
 
 ```bash
@@ -68,6 +76,23 @@ Run an end-to-end train, evaluation, and sample inference demo (also the default
 
 ```bash
 python main.py --demo
+```
+
+### Training and evaluation flags
+
+`--train` and `--evaluate` accept the following options:
+
+| Flag | Default | Meaning |
+|---|---:|---|
+| `--epochs` | `15` | Number of training epochs |
+| `--batch-size` | `32` | Mini-batch size |
+| `--lr` | `2e-3` | AdamW learning rate (must be finite and `> 0`) |
+| `--checkpoint` | `outputs/fusion_transformer.pt` | Checkpoint path used for saving and loading |
+| `--seed` | `42` | Random seed |
+
+```bash
+python main.py --train --epochs 30 --batch-size 64 --lr 1e-3 --checkpoint outputs/run2.pt
+python main.py --evaluate --checkpoint outputs/run2.pt
 ```
 
 ### Observed CLI Train & Evaluate Output
