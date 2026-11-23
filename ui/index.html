@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fusion-Transformer Training Console — tabular + text</title>
+<style>
+  :root {
+    --bg: #12100e;
+    --panel: #1b1815;
+    --panel-2: #241f1b;
+    --ink: #f0ebe4;
+    --ink-soft: #a89e91;
+    --rule: #352e27;
+    --tabular: #f0a848;
+    --text: #63b3d4;
+    --fusion: #c98be0;
+    --good: #5cc38a;
+    --bad: #ff6b5e;
+    --mono: "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --sans: "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 var(--sans); }
+  header { padding: 30px 26px 20px; border-bottom: 1px solid var(--rule);
+           background: linear-gradient(180deg, #1c1813, var(--bg)); }
+  header h1 { margin: 0; font: 600 clamp(22px, 3.4vw, 32px)/1.12 var(--sans); letter-spacing: -.015em; }
+  header h1 em { font-style: normal; color: var(--fusion); }
+  header p { margin: 9px 0 0; max-width: 72ch; color: var(--ink-soft); font-size: 14.5px; }
+  .layout { display: grid; grid-template-columns: minmax(300px, 350px) 1fr; gap: 20px; padding: 20px 26px 56px; }
+  @media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 7px; padding: 18px 20px; }
+  .panel + .panel { margin-top: 16px; }
+  .panel h2 { margin: 0 0 3px; font: 600 17px/1.25 var(--sans); }
+  .meta { margin: 0 0 12px; color: var(--ink-soft); font-size: 12.5px; }
+  label { display: block; font: 600 11px/1 var(--sans); letter-spacing: .07em; text-transform: uppercase; color: var(--ink-soft); margin: 13px 0 6px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  input[type="number"] {
+    width: 100%; border: 1px solid var(--rule); border-radius: 4px; background: var(--panel-2);
+    color: var(--ink); font: 13px/1.5 var(--mono); padding: 8px 10px;
+  }
+  input:focus-visible, button:focus-visible { outline: 2px solid var(--fusion); outline-offset: 1px; }
+  button { width: 100%; margin-top: 16px; border: 0; border-radius: 5px; cursor: pointer;
+           padding: 13px 14px; font: 600 14.5px/1 var(--sans); background: var(--fusion); color: #2a1030; }
+  button:hover { background: #b878cf; }
+  button:disabled { opacity: .55; cursor: wait; }
+  .error { margin-top: 12px; padding: 10px 12px; border-left: 3px solid var(--bad); background: #2a1c1a; color: var(--bad); font-size: 13px; white-space: pre-wrap; }
+
+  .statgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 7px; overflow: hidden; }
+  .stat { background: var(--panel); padding: 13px 15px; }
+  .stat .k { font: 600 10.5px/1 var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); }
+  .stat .v { font: 600 23px/1.15 var(--mono); margin-top: 5px; font-variant-numeric: tabular-nums; }
+  .stat .v.good { color: var(--good); }
+
+  svg { width: 100%; height: auto; display: block; }
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; margin: 10px 0 0; font-size: 12.5px; color: var(--ink-soft); }
+  .legend span { display: flex; align-items: center; gap: 7px; }
+  .swatch { width: 13px; height: 4px; border-radius: 2px; display: inline-block; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule); }
+  th { font: 600 10.5px/1 var(--sans); letter-spacing: .05em; text-transform: uppercase; color: var(--ink-soft); background: var(--panel-2); }
+  td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .wrap { overflow-x: auto; }
+  .bar { height: 7px; border-radius: 4px; background: var(--panel-2); overflow: hidden; margin-top: 5px; }
+  .bar i { display: block; height: 100%; background: var(--fusion); border-radius: 4px; }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; font-size: 12.5px; color: var(--fusion); font-weight: 600; }
+  pre { background: #16120f; color: #d6dae0; padding: 12px; border-radius: 4px; overflow: auto; font: 11px/1.5 var(--mono); max-height: 300px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Fusion-transformer <em>training console</em></h1>
+  <p>Train a multimodal transformer where tabular features and text jointly determine the
+  label, so neither modality solves the task alone. Track training and validation loss,
+  then read held-out metrics (accuracy, precision, recall, macro-F1, ROC-AUC).</p>
+</header>
+
+<div class="layout">
+  <form class="panel" id="form">
+    <h2>Training run</h2>
+    <p class="meta">Runs <code>Pipeline.train()</code> from <code>src/pipeline.py</code>.</p>
+
+    <div class="grid2">
+      <div><label for="num_epochs">Epochs</label><input type="number" id="num_epochs" value="8" min="1" max="50"></div>
+      <div><label for="batch_size">Batch size</label><input type="number" id="batch_size" value="32" min="1" max="512"></div>
+      <div><label for="num_samples">Samples</label><input type="number" id="num_samples" value="600" min="50" max="20000"></div>
+      <div><label for="num_features">Tabular features</label><input type="number" id="num_features" value="8" min="4" max="64"></div>
+      <div><label for="d_model">Model dim</label><input type="number" id="d_model" value="32" min="4" max="256"></div>
+      <div><label for="seed">Seed</label><input type="number" id="seed" value="42"></div>
+    </div>
+
+    <label for="learning_rate">Learning rate</label>
+    <input type="number" id="learning_rate" value="0.002" step="0.0005">
+
+    <button type="submit" id="run">Train model</button>
+    <div class="error" id="error" hidden></div>
+  </form>
+
+  <section>
+    <div class="panel" id="fusion-diagram" hidden>
+      <h2>Modality fusion</h2>
+      <p class="meta">Tabular and text streams are encoded separately, then fused for joint classification.</p>
+      <div id="diagram"></div>
+    </div>
+
+    <div class="panel" id="metrics-panel" hidden>
+      <h2>Held-out test metrics</h2>
+      <div class="statgrid" id="statgrid"></div>
+    </div>
+
+    <div class="panel" id="chart-panel" hidden>
+      <h2>Loss curves</h2>
+      <p class="meta" id="chart-meta"></p>
+      <div id="chart"></div>
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--tabular)"></i> training loss</span>
+        <span><i class="swatch" style="background:var(--text)"></i> validation loss</span>
+      </div>
+    </div>
+
+    <div class="panel" id="detail-panel" hidden>
+      <h2>Validation metrics</h2>
+      <div class="wrap"><table id="detail-table"></table></div>
+    </div>
+
+    <details id="raw-details" hidden>
+      <summary>Show raw JSON result</summary>
+      <pre id="raw"></pre>
+    </details>
+  </section>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const num = (x, d = 3) => x == null ? "—" : Number(x).toFixed(d);
+
+  function renderDiagram() {
+    $("diagram").innerHTML = `<svg viewBox="0 0 640 190" role="img" aria-label="Tabular and text modality fusion diagram">
+      <rect x="10" y="30" width="150" height="52" rx="6" fill="none" stroke="var(--tabular)" stroke-width="2"/>
+      <text x="85" y="61" fill="var(--tabular)" font-size="15" text-anchor="middle">tabular</text>
+      <rect x="10" y="108" width="150" height="52" rx="6" fill="none" stroke="var(--text)" stroke-width="2"/>
+      <text x="85" y="139" fill="var(--text)" font-size="15" text-anchor="middle">text</text>
+      <line x1="160" y1="56" x2="250" y2="95" stroke="var(--tabular)" stroke-width="2"/>
+      <line x1="160" y1="134" x2="250" y2="95" stroke="var(--text)" stroke-width="2"/>
+      <rect x="250" y="62" width="150" height="66" rx="6" fill="none" stroke="var(--fusion)" stroke-width="2.5"/>
+      <text x="325" y="93" fill="var(--fusion)" font-size="15" text-anchor="middle">fusion</text>
+      <text x="325" y="113" fill="var(--ink-soft)" font-size="11" text-anchor="middle">transformer</text>
+      <line x1="400" y1="95" x2="470" y2="95" stroke="var(--fusion)" stroke-width="2"/>
+      <rect x="470" y="62" width="160" height="66" rx="6" fill="none" stroke="var(--ink-soft)" stroke-width="2"/>
+      <text x="550" y="93" fill="var(--ink)" font-size="15" text-anchor="middle">class</text>
+      <text x="550" y="113" fill="var(--ink-soft)" font-size="11" text-anchor="middle">logits</text>
+    </svg>`;
+    $("fusion-diagram").hidden = false;
+  }
+
+  function renderMetrics(m) {
+    const entries = [
+      ["Accuracy", m.accuracy], ["Macro-F1", m.macro_f1],
+      ["Precision", m.precision], ["Recall", m.recall], ["ROC-AUC", m.roc_auc],
+    ];
+    $("statgrid").innerHTML = entries.map(([k, v]) =>
+      `<div class="stat"><div class="k">${esc(k)}</div><div class="v ${v >= 0.6 ? "good" : ""}">${num(v)}</div></div>`).join("");
+    $("metrics-panel").hidden = false;
+  }
+
+  function renderChart(trainLosses, valLosses) {
+    const W = 900, H = 300, pad = 46;
+    const all = [...trainLosses, ...valLosses];
+    const maxLoss = Math.max(...all, 0.01) * 1.1;
+    const minLoss = Math.min(...all, 0);
+    const x = (i) => pad + (W - 2 * pad) * (i / Math.max(trainLosses.length - 1, 1));
+    const y = (v) => pad + (H - 2 * pad) * (1 - (v - minLoss) / (maxLoss - minLoss));
+    const pts = (arr) => arr.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    const grid = [0, 0.5, 1].map((f) => {
+      const yy = (pad + (H - 2 * pad) * f).toFixed(1);
+      const val = (maxLoss - f * (maxLoss - minLoss)).toFixed(2);
+      return `<line x1="${pad}" x2="${W - pad}" y1="${yy}" y2="${yy}" stroke="var(--rule)"/>
+              <text x="8" y="${Number(yy) + 4}" font-size="10" fill="var(--ink-soft)">${val}</text>`;
+    }).join("");
+    const dots = trainLosses.map((v, i) =>
+      `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3.5" fill="var(--tabular)"/>`).join("");
+    $("chart").innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Training and validation loss per epoch">
+      ${grid}
+      <polyline points="${pts(trainLosses)}" fill="none" stroke="var(--tabular)" stroke-width="2.5"/>
+      <polyline points="${pts(valLosses)}" fill="none" stroke="var(--text)" stroke-width="2.5"/>${dots}
+      <text x="${pad}" y="${H - 10}" font-size="11" fill="var(--ink-soft)">epoch 1 … ${trainLosses.length}</text>
+    </svg>`;
+    $("chart-meta").textContent = `${trainLosses.length} epoch(s) · final train ${num(trainLosses[trainLosses.length - 1], 4)}, final val ${num(valLosses[valLosses.length - 1], 4)}`;
+    $("chart-panel").hidden = false;
+  }
+
+  function renderDetail(m) {
+    $("detail-table").innerHTML =
+      `<thead><tr><th>Metric</th><th>Value</th><th></th></tr></thead><tbody>` +
+      Object.entries(m).map(([k, v]) => `<tr>
+        <td><b>${esc(k)}</b></td><td class="num">${num(v)}</td>
+        <td><div class="bar"><i style="width:${Math.max(2, 100 * v)}%"></i></div></td>
+      </tr>`).join("") + `</tbody>`;
+    $("detail-panel").hidden = false;
+  }
+
+  $("form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = $("run");
+    btn.disabled = true; btn.textContent = "Training…";
+    $("error").hidden = true;
+    try {
+      const res = await fetch("/api/train", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          num_epochs: Number($("num_epochs").value),
+          batch_size: Number($("batch_size").value),
+          learning_rate: Number($("learning_rate").value),
+          num_samples: Number($("num_samples").value),
+          num_features: Number($("num_features").value),
+          d_model: Number($("d_model").value),
+          seed: Number($("seed").value),
+        }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || `Request failed (${res.status})`);
+      renderDiagram();
+      renderMetrics(payload.test_metrics);
+      renderChart(payload.train_losses, payload.val_losses);
+      renderDetail(payload.val_metrics);
+      $("raw").textContent = JSON.stringify(payload, null, 2);
+      $("raw-details").hidden = false;
+    } catch (err) {
+      $("error").textContent = err.message;
+      $("error").hidden = false;
+    } finally {
+      btn.disabled = false; btn.textContent = "Train model";
+    }
+  });
+
+  $("form").dispatchEvent(new Event("submit"));
+})();
+</script>
+</body>
+</html>

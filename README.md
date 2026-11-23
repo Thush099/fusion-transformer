@@ -125,3 +125,16 @@ pytest -v
 ## License
 
 MIT License — see [LICENSE](LICENSE).
+
+## Web UI
+
+A local training console drives the real pipeline in the browser:
+
+```bash
+python ui/server.py            # http://127.0.0.1:8130
+```
+
+Configure the multimodal run (epochs, samples, features, model dim), train on synthetic
+tabular+text data, and read the modality-fusion diagram, training/validation loss curves,
+and held-out accuracy, precision, recall, macro-F1, and ROC-AUC. The server uses only the
+standard library and calls `Pipeline.train()`.
