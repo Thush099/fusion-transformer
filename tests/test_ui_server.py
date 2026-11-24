@@ -72,3 +72,11 @@ def test_invalid_inputs_rejected_with_clear_message(server, payload, message):
     status, body = _post(server, merged)
     assert status == 400
     assert message in body["error"]
+
+def test_index_has_accessibility_features(server):
+    """The served page ships skip-link navigation, a main landmark, and reduced-motion guard."""
+    html = urllib.request.urlopen(server + "/").read().decode("utf-8")
+    assert 'class="skip-link"' in html, "missing skip link for keyboard users"
+    assert '<main class="layout">' in html, "missing main landmark"
+    assert 'role="alert"' in html, "error box must announce to assistive tech"
+    assert "prefers-reduced-motion" in html, "missing reduced-motion guard"
