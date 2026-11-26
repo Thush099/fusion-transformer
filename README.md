@@ -1,5 +1,7 @@
 # fusion-transformer: Multimodal Tabular + Text Fusion Transformer
 
+[![CI](https://github.com/Thush099/fusion-transformer/actions/workflows/tests.yml/badge.svg)](https://github.com/Thush099/fusion-transformer/actions/workflows/tests.yml)
+
 A self-contained PyTorch multimodal classification model combining **FT-Transformer** tabular feature tokenization, a deterministic **Transformer text encoder**, and **bidirectional cross-attention** with gated fusion.
 
 ## Architecture
