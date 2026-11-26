@@ -80,3 +80,11 @@ def test_index_has_accessibility_features(server):
     assert '<main class="layout">' in html, "missing main landmark"
     assert 'role="alert"' in html, "error box must announce to assistive tech"
     assert "prefers-reduced-motion" in html, "missing reduced-motion guard"
+
+
+def test_index_has_loading_and_theme_states(server):
+    """The page shows busy feedback during a run and declares its dark-first color scheme."""
+    html = urllib.request.urlopen(server + "/").read().decode("utf-8")
+    assert 'aria-busy' in html, "form must announce busy state during a run"
+    assert 'class="spinner"' in html, "missing visible busy indicator"
+    assert "color-scheme: dark" in html, "dark-first page must declare its color scheme"
