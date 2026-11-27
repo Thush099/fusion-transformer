@@ -103,3 +103,10 @@ def test_oversized_declared_body_is_rejected_not_hung(server):
         )
         first = sock.recv(4096).split(b"\r\n", 1)[0]
     assert b"413" in first, f"expected 413 for oversized body, got {first!r}"
+
+
+def test_index_disables_heuristic_caching(server):
+    """The UI shell must not be heuristically cached — stale HTML after edits was
+    observed live because custom do_GET handlers send no cache validators."""
+    resp = urllib.request.urlopen(server + "/")
+    assert resp.headers.get("Cache-Control") == "no-cache"
