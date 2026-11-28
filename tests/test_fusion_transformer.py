@@ -560,3 +560,36 @@ class TestSetSeed:
         a = torch.randn(4).tolist()
         set_seed(99)
         assert torch.randn(4).tolist() == a
+
+
+def test_uninitialized_state_contracts(tmp_path: Path) -> None:
+    """Public methods reject use before initialization with clear errors."""
+    pipe = Pipeline()
+    with pytest.raises(RuntimeError, match="has not been built"):
+        pipe.evaluate_loader(object())
+    with pytest.raises(RuntimeError, match="Cannot save checkpoint"):
+        pipe.save_checkpoint(str(tmp_path / "x.pt"))
+    with pytest.raises(RuntimeError, match="must be loaded first"):
+        pipe.predict(np.zeros((1, 2)), ["a"])
+
+
+def test_load_checkpoint_missing_file_raises(tmp_path: Path) -> None:
+    cfg = Config(
+        d_model=32, n_heads=4, n_tabular_layers=1, n_text_layers=1,
+        dim_feedforward=64, num_samples=100, batch_size=32, num_epochs=1, seed=3,
+    )
+    pipe = Pipeline(cfg)
+    pipe.train()
+    with pytest.raises(FileNotFoundError):
+        pipe.load_checkpoint(str(tmp_path / "missing.pt"))
+
+
+def test_demo_runs_and_reports_metrics(capsys: pytest.CaptureFixture[str]) -> None:
+    cfg = Config(
+        d_model=32, n_heads=4, n_tabular_layers=1, n_text_layers=1,
+        dim_feedforward=64, num_samples=120, batch_size=32, num_epochs=2, seed=5,
+    )
+    metrics = Pipeline(cfg).demo(num_examples=1)
+    assert {"accuracy", "macro_f1", "roc_auc"} <= set(metrics)
+    out = capsys.readouterr().out
+    assert "Sample Multimodal Predictions" in out
